@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import math
 import cvxpy as cp
 import itertools
+from pyswarm import pso
 
 def compute_jacobian_dot_analytic(robot_id, link_index, q_list, dq_list, delta=1e-6):
     """
@@ -120,7 +121,7 @@ class RobotController:
         return eePose
 
     def solve_ForwardPositionKinematics(self, joint_pos):
-        print('Forward position kinematics')
+        #print('Forward position kinematics')
 
         # Get end-effector link state
         eeState = p.getLinkState(self.robot_id, self.end_eff_index)
@@ -171,8 +172,8 @@ class RobotController:
 
         ori_error = theta * axis  # Convert to a 3D angular error vector
 
-        print("Position Error:", pos_error)
-        print("Orientation Error (Axis-Angle):", ori_error)
+        # print("Position Error:", pos_error)
+        # print("Orientation Error (Axis-Angle):", ori_error)
 
         return pos_error, ori_error
     # function to solve inverse kinematics
@@ -1013,7 +1014,7 @@ class RobotController:
 
         p.disconnect()
 
-    def task_space_impedance_control(self, th_initial, desired_pose, controller_gain=300):
+    def task_space_impedance_control(self, th_initial, desired_pose, controller_gain=300, max_steps=5000):
         """
         任务空间阻抗控制（不忽略姿态控制），目标使末端任务空间位姿（[x,y,z,roll,pitch,yaw]）跟踪 desired_pose，
         同时利用 null space 投影使关节向 th_initial 收敛。
@@ -1022,6 +1023,9 @@ class RobotController:
             再计算 tau_null = -K_n*(q - q_d) - D_n*q_dot，
             最终 tau = tau + N*tau_null，其中 N = I - J^T*pinv(J^T)
         """
+        base_pose = np.array([ 2.6, -1.4, 4.0, -1.6, -1.7, -1.9, 2.6])
+        self.setJointPosition(base_pose)
+
         p.setRealTimeSimulation(False)
         dt = self.time_step
         total_joints = p.getNumJoints(self.robot_id)
@@ -1037,7 +1041,7 @@ class RobotController:
         D_d = 2 * np.sqrt(K_d)
         # Null space 控制参数（7×7 对角矩阵）
         K_n = np.diag([0.1] * len(self.controllable_joints))
-        D_n = np.diag([0.1] * len(self.controllable_joints))
+        D_n = np.diag([0.025] * len(self.controllable_joints))
 
         # 期望任务空间位姿：包含位置和姿态（单位： [x,y,z,roll,pitch,yaw]）
         xd = desired_pose
@@ -1131,7 +1135,10 @@ class RobotController:
             get_joint_states_and_acceleration.prev_q_dot = q_dot.copy()
             return q_list, dq_list, q, q_dot, q_ddot
         
-        while True:
+        steps = max_steps
+        
+        for step in range(steps):
+            #print(step)
             # 获取当前关节状态
             xd = self.readGUIparams(xdGUIids)
             q_list, dq_list, q, q_dot, q_ddot = get_joint_states_and_acceleration(self.robot_id,
@@ -1162,7 +1169,7 @@ class RobotController:
             # 计算 null space 补偿
             tau_null = np.array(-K_n @ (q - q_d) - D_n @ q_dot).reshape(len(self.controllable_joints), 1)
             N = np.eye(len(q)) - J.T @ np.linalg.pinv(J.T)
-            # tau = tau + N @ tau_null
+            tau = tau + N @ tau_null
             ext_force_x = p.readUserDebugParameter(ext_force_x_slider)
             ext_force_y = p.readUserDebugParameter(ext_force_y_slider)
             ext_force_z = p.readUserDebugParameter(ext_force_z_slider)
@@ -1173,12 +1180,59 @@ class RobotController:
                                  forceObj=ext_force,
                                  posObj=pos ,
                                  flags=p.WORLD_FRAME)
-            print("q:", q)
-            print("tau:", tau.flatten())
-            print("End-effector pose:", pos.flatten(), quat)
+            # 输出调试信息
+            # print("q:", q)
+            # print("tau:", tau.flatten())
+            #print("End-effector pose:", pos.flatten(), quat)
+
+            if step % 50 == 0 or step == steps - 1:
+                bar_length = 30
+                progress = (step + 1) / steps
+                block = int(round(bar_length * progress))
+                bar = "#" * block + "-" * (bar_length - block)
+                
+                if step == steps - 1:
+                    # 最后一次，加换行
+                    print(f"\rProgress: [{bar}] {progress*100:.1f}%")
+                else:
+                    # 中间过程，不换行
+                    print(f"\rProgress: [{bar}] {progress*100:.1f}%", end="", flush=True)
+
             p.setJointMotorControlArray(self.robot_id, joint_indices,
                                         controlMode=p.TORQUE_CONTROL,
                                         forces=tau)
             p.stepSimulation()
             time.sleep(dt)
-        p.disconnect()
+        #p.disconnect()
+        return tau, q, pos, quat
+
+    def static_pose_opt(self, th_initial, desired_pose, controller_gain=100):
+        dt = self.time_step
+        p.setRealTimeSimulation(False)
+        
+        q_desired = th_initial
+
+        def cost_function(q_desired):
+            print("Evaluating cost for q:", np.round(q_desired, 2))
+            # 关节最大力矩
+            tau_max = np.array([39, 39, 39, 39, 9, 9, 9])
+            # 获取最后输出力矩与关节位置
+            tau, q, pos, quat = self.task_space_impedance_control(q_desired, desired_pose, controller_gain, max_steps=5000)
+            #print("tau:", tau)
+            print("q:", q)
+            print("End-effector pose:", pos.flatten(), quat)
+            tau = tau.flatten()
+            cost = np.sum((tau_max - np.abs(tau)) ** 2)
+            return cost
+        
+        # 设置优化边界
+        lb = [-np.pi] * 7
+        ub = [np.pi] * 7
+
+        print("Starting PSO optimization...")
+        best_th, best_cost = pso(cost_function, lb, ub, swarmsize=5, maxiter=1, debug=True)
+        print("Best th_initial found:", best_th)
+        print("Cost:", best_cost)
+                
+
+        
