@@ -14,6 +14,8 @@ import math
 import cvxpy as cp
 import itertools
 from pyswarm import pso
+import csv
+import pandas as pd
 
 def compute_jacobian_dot_analytic(robot_id, link_index, q_list, dq_list, delta=1e-6):
     """
@@ -1014,7 +1016,7 @@ class RobotController:
 
         p.disconnect()
 
-    def task_space_impedance_control(self, th_initial, desired_pose, controller_gain=300, max_steps=5000):
+    def task_space_impedance_control(self, th_initial, desired_pose, controller_gain=300, max_steps=5000, force_ext=[0, 0, 0]):
         """
         任务空间阻抗控制（不忽略姿态控制），目标使末端任务空间位姿（[x,y,z,roll,pitch,yaw]）跟踪 desired_pose，
         同时利用 null space 投影使关节向 th_initial 收敛。
@@ -1057,9 +1059,18 @@ class RobotController:
         joint_indices = [i for i in range(total_joints_num) if p.getJointInfo(self.robot_id, i)[2] != p.JOINT_FIXED]
 
         J_prev = np.zeros((6, len(self.controllable_joints)))
-        ext_force_x_slider = p.addUserDebugParameter("Ext Force X", -100, 100, 0)
-        ext_force_y_slider = p.addUserDebugParameter("Ext Force Y", -100, 100, 0)
-        ext_force_z_slider = p.addUserDebugParameter("Ext Force Z", -100, 100, 0)
+        # ext_force_x_slider = p.addUserDebugParameter("Ext Force X", -100, 100, 0)
+        # ext_force_y_slider = p.addUserDebugParameter("Ext Force Y", -100, 100, 0)
+        # ext_force_z_slider = p.addUserDebugParameter("Ext Force Z", -100, 100, 0)
+
+        # 可视化目标点
+        # target_visual = p.createVisualShape(
+        #     shapeType=p.GEOM_SPHERE,
+        #     radius=0.02,
+        #     rgbaColor=[1, 0, 0, 1])
+        # p.createMultiBody(
+        #     baseVisualShapeIndex=target_visual,
+        #     basePosition=desired_pose[:3])
 
         def compute_jacobian_dot_analytic(robot_id, link_index, q_list, dq_list, delta=1e-6):
             """
@@ -1170,10 +1181,10 @@ class RobotController:
             tau_null = np.array(-K_n @ (q - q_d) - D_n @ q_dot).reshape(len(self.controllable_joints), 1)
             N = np.eye(len(q)) - J.T @ np.linalg.pinv(J.T)
             tau = tau + N @ tau_null
-            ext_force_x = p.readUserDebugParameter(ext_force_x_slider)
-            ext_force_y = p.readUserDebugParameter(ext_force_y_slider)
-            ext_force_z = p.readUserDebugParameter(ext_force_z_slider)
-            ext_force = [ext_force_x, ext_force_y, ext_force_z]
+            # ext_force_x = p.readUserDebugParameter(ext_force_x_slider)
+            # ext_force_y = p.readUserDebugParameter(ext_force_y_slider)
+            # ext_force_z = p.readUserDebugParameter(ext_force_z_slider)
+            ext_force = force_ext
             # 将外力施加在末端执行器所在的连杆上，这里使用 p.LINK_FRAME 施加在连杆原点
             p.applyExternalForce(objectUniqueId=self.robot_id,
                                  linkIndex=total_joints_num - 1,
@@ -1212,27 +1223,87 @@ class RobotController:
         
         q_desired = th_initial
 
-        def cost_function(q_desired):
-            print("Evaluating cost for q:", np.round(q_desired, 2))
-            # 关节最大力矩
-            tau_max = np.array([39, 39, 39, 39, 9, 9, 9])
-            # 获取最后输出力矩与关节位置
-            tau, q, pos, quat = self.task_space_impedance_control(q_desired, desired_pose, controller_gain, max_steps=5000)
-            #print("tau:", tau)
-            print("q:", q)
-            print("End-effector pose:", pos.flatten(), quat)
-            tau = tau.flatten()
-            cost = np.sum((tau_max - np.abs(tau)) ** 2)
-            return cost
-        
-        # 设置优化边界
-        lb = [-np.pi] * 7
-        ub = [np.pi] * 7
+        # 读取 forces.csv 文件中的所有外力行
+        force_csv_path = 'forces.csv'
+        forces = pd.read_csv(force_csv_path).values  # Nx3 array
 
-        print("Starting PSO optimization...")
-        best_th, best_cost = pso(cost_function, lb, ub, swarmsize=5, maxiter=1, debug=True)
-        print("Best th_initial found:", best_th)
-        print("Cost:", best_cost)
+        # 创建用于保存优化结果的 csv 文件
+        result_csv_path = 'results.csv'
+        with open(result_csv_path, mode='w', newline='') as result_file:
+            writer = csv.writer(result_file)
+            writer.writerow(["Fx", "Fy", "Fz", "cost", "q1", "q2", "q3", "q4", "q5", "q6", "q7", 
+                            "tau1", "tau2", "tau3", "tau4", "tau5", "tau6", "tau7",
+                            "x", "y", "z", "roll", "pitch", "yaw"])
+            
+            # 创建 cost_data.csv 文件，记录每组力的迭代曲线
+            cost_data_csv = 'cost_data.csv'
+            with open(cost_data_csv, mode='w', newline='') as cost_file:
+                cost_writer = csv.writer(cost_file)
+                header = ["Fx", "Fy", "Fz"] + [f"iter_{i+1}" for i in range(50)]
+                cost_writer.writerow(header)
+
+            for i, test_force in enumerate(forces):
+                print(f"\n🔧 Force Sample {i+1}/{len(forces)}: {test_force}")
+
+                def cost_function(q_desired):
+                    print("Evaluating cost for q:", np.round(q_desired, 2))
+                    # 关节最大力矩
+                    tau_max = np.array([39, 39, 39, 39, 9, 9, 9])
+                    # 获取最后输出力矩与关节位置
+                    tau, q, pos, quat = self.task_space_impedance_control(q_desired, desired_pose, controller_gain, max_steps=100, force_ext=test_force.tolist())
+                    #print("tau:", tau)
+                    # print("q:", q)
+                    # print("End-effector pose:", pos.flatten(), quat)
+                    tau = tau.flatten()
+                    cost = np.sum((tau_max - np.abs(tau)) ** 2)
+                    return cost, tau, q, pos, quat
+                
+                # 记录每代迭代的 best_cost
+                all_costs = []
+                gbest_cost = []
+                g_best_so_far = float('inf')
+
+                # 包装一个带返回值的目标函数
+                def cost_function_return_cost_only(q_desired):
+                    cost, _, _, _, _ = cost_function(q_desired)
+                    all_costs.append(cost)
+                    return cost
+                
+                # 设置优化边界
+                lb = [-np.pi] * 7
+                ub = [np.pi] * 7
+
+                # PSO 参数
+                swarm_size = 30
+                max_iter = 50
+
+                print("Starting PSO optimization...")
+                best_th, best_cost = pso(cost_function_return_cost_only, lb, ub, swarmsize=swarm_size, maxiter=max_iter, debug=True)
+
+                print(f"✅ Done Force {i+1}/{len(forces)}")
+
+                print("Best th_initial found:", best_th)
+                print("Cost:", best_cost)
+
+                final_cost, tau, q, pos, quat = cost_function(best_th)
+
+                # 提取每轮的 g_best
+                for i in range(max_iter):
+                    start = i * swarm_size
+                    end = (i + 1) * swarm_size
+                    gbest_cost.append(min(all_costs[start:end]))
+
+                # 记录 results.csv
+                with open(result_csv_path, mode='a', newline='') as result_file:
+                    writer = csv.writer(result_file)
+                    writer.writerow(list(test_force) + [final_cost] + list(q) + list(tau) + list(pos.flatten()) + list(p.getEulerFromQuaternion(quat)))
+
+                # 记录 cost_data.csv
+                with open(cost_data_csv, mode='a', newline='') as cost_file:
+                    cost_writer = csv.writer(cost_file)
+                    padded_costs = gbest_cost[:50] + [gbest_cost[-1]] * (50 - len(gbest_cost))
+                    cost_writer.writerow(list(test_force) + padded_costs)
+
                 
 
         
