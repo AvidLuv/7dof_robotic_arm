@@ -1223,6 +1223,14 @@ class RobotController:
         
         q_desired = th_initial
 
+        # 设置优化边界
+        lb = [-np.pi] * 7
+        ub = [np.pi] * 7
+
+        # PSO 参数
+        swarm_size = 3
+        max_iter = 3
+
         # 读取 forces.csv 文件中的所有外力行
         force_csv_path = 'forces.csv'
         forces = pd.read_csv(force_csv_path).values  # Nx3 array
@@ -1268,14 +1276,6 @@ class RobotController:
                     cost, _, _, _, _ = cost_function(q_desired)
                     all_costs.append(cost)
                     return cost
-                
-                # 设置优化边界
-                lb = [-np.pi] * 7
-                ub = [np.pi] * 7
-
-                # PSO 参数
-                swarm_size = 30
-                max_iter = 50
 
                 print("Starting PSO optimization...")
                 best_th, best_cost = pso(cost_function_return_cost_only, lb, ub, swarmsize=swarm_size, maxiter=max_iter, debug=True)
