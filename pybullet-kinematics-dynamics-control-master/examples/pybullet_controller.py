@@ -1228,8 +1228,8 @@ class RobotController:
         ub = [np.pi] * 7
 
         # PSO 参数
-        swarm_size = 3
-        max_iter = 3
+        swarm_size = 15
+        max_iter = 18
 
         # 读取 forces.csv 文件中的所有外力行
         force_csv_path = 'forces.csv'
@@ -1239,9 +1239,13 @@ class RobotController:
         result_csv_path = 'results.csv'
         with open(result_csv_path, mode='w', newline='') as result_file:
             writer = csv.writer(result_file)
-            writer.writerow(["Fx", "Fy", "Fz", "cost", "q1", "q2", "q3", "q4", "q5", "q6", "q7", 
-                            "tau1", "tau2", "tau3", "tau4", "tau5", "tau6", "tau7",
-                            "x", "y", "z", "roll", "pitch", "yaw"])
+            writer.writerow([
+                "Fx", "Fy", "Fz", "cost",
+                "best_th1", "best_th2", "best_th3", "best_th4", "best_th5", "best_th6", "best_th7",
+                "q1", "q2", "q3", "q4", "q5", "q6", "q7",
+                "tau1", "tau2", "tau3", "tau4", "tau5", "tau6", "tau7",
+                "x", "y", "z", "roll", "pitch", "yaw"
+            ])
             
             # 创建 cost_data.csv 文件，记录每组力的迭代曲线
             cost_data_csv = 'cost_data.csv'
@@ -1258,7 +1262,7 @@ class RobotController:
                     # 关节最大力矩
                     tau_max = np.array([39, 39, 39, 39, 9, 9, 9])
                     # 获取最后输出力矩与关节位置
-                    tau, q, pos, quat = self.task_space_impedance_control(q_desired, desired_pose, controller_gain, max_steps=100, force_ext=test_force.tolist())
+                    tau, q, pos, quat = self.task_space_impedance_control(q_desired, desired_pose, controller_gain, max_steps=9000, force_ext=test_force.tolist())
                     #print("tau:", tau)
                     # print("q:", q)
                     # print("End-effector pose:", pos.flatten(), quat)
@@ -1296,7 +1300,7 @@ class RobotController:
                 # 记录 results.csv
                 with open(result_csv_path, mode='a', newline='') as result_file:
                     writer = csv.writer(result_file)
-                    writer.writerow(list(test_force) + [final_cost] + list(q) + list(tau) + list(pos.flatten()) + list(p.getEulerFromQuaternion(quat)))
+                    writer.writerow(list(test_force) + [final_cost] + list(best_th) + list(q) + list(tau) + list(pos.flatten()) + list(p.getEulerFromQuaternion(quat)))
 
                 # 记录 cost_data.csv
                 with open(cost_data_csv, mode='a', newline='') as cost_file:
