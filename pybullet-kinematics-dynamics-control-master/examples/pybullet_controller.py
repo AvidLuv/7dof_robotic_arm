@@ -1239,7 +1239,7 @@ class RobotController:
             cost_data_csv = 'cost_data.csv'
             with open(cost_data_csv, mode='w', newline='') as cost_file:
                 cost_writer = csv.writer(cost_file)
-                header = ["Fx", "Fy", "Fz"] + [f"iter_{i+1}" for i in range(50)]
+                header = ["Fx", "Fy", "Fz"] + [f"iter_{i+1}" for i in range(max_iter)]
                 cost_writer.writerow(header)
 
             for i, test_force in enumerate(forces):
@@ -1301,7 +1301,7 @@ class RobotController:
                 # 记录 cost_data.csv
                 with open(cost_data_csv, mode='a', newline='') as cost_file:
                     cost_writer = csv.writer(cost_file)
-                    padded_costs = gbest_cost[:50] + [gbest_cost[-1]] * (50 - len(gbest_cost))
+                    padded_costs = gbest_cost[:max_iter] + [gbest_cost[-1]] * (max_iter - len(gbest_cost))
                     cost_writer.writerow(list(test_force) + padded_costs)
 
                 
