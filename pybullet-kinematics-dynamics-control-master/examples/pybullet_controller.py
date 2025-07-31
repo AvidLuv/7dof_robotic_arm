@@ -1047,7 +1047,7 @@ class RobotController:
 
         # 期望任务空间位姿：包含位置和姿态（单位： [x,y,z,roll,pitch,yaw]）
         xd = desired_pose
-        xdGUIids = self.TaskSpaceGUIcontrol(goal=xd)
+        # xdGUIids = self.TaskSpaceGUIcontrol(goal=xd)
         p_dot_d = np.zeros((6, 1))
         p_ddot_des = np.zeros((6, 1))
 
@@ -1151,7 +1151,7 @@ class RobotController:
         for step in range(steps):
             #print(step)
             # 获取当前关节状态
-            xd = self.readGUIparams(xdGUIids)
+            #xd = self.readGUIparams(xdGUIids)
             q_list, dq_list, q, q_dot, q_ddot = get_joint_states_and_acceleration(self.robot_id,
                                                                                   self.controllable_joints, dt)
             M = np.array(p.calculateMassMatrix(self.robot_id, q_list))
@@ -1229,7 +1229,7 @@ class RobotController:
 
         # PSO 参数
         swarm_size = 15
-        max_iter = 18
+        max_iter = 15
 
         # 读取 forces.csv 文件中的所有外力行
         force_csv_path = 'forces.csv'
