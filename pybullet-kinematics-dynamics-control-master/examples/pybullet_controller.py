@@ -16,6 +16,7 @@ import itertools
 from pyswarm import pso
 import csv
 import pandas as pd
+import os
 
 def compute_jacobian_dot_analytic(robot_id, link_index, q_list, dq_list, delta=1e-6):
     """
@@ -1185,16 +1186,38 @@ class RobotController:
             # ext_force_y = p.readUserDebugParameter(ext_force_y_slider)
             # ext_force_z = p.readUserDebugParameter(ext_force_z_slider)
             ext_force = force_ext
+            #print("External Force:", ext_force)
             # 将外力施加在末端执行器所在的连杆上，这里使用 p.LINK_FRAME 施加在连杆原点
             p.applyExternalForce(objectUniqueId=self.robot_id,
                                  linkIndex=total_joints_num - 1,
                                  forceObj=ext_force,
-                                 posObj=pos ,
+                                 posObj=pos,
                                  flags=p.WORLD_FRAME)
             # 输出调试信息
             # print("q:", q)
             # print("tau:", tau.flatten())
             #print("End-effector pose:", pos.flatten(), quat)
+
+            # 检查 q, q_dot, tau 是否异常
+            if np.any(np.isnan(q)) or np.any(np.isnan(q_dot)) or np.any(np.isnan(tau)):
+                print(f"\n[ERROR] Step {step}: NaN detected")
+                print("q:", q)
+                print("q_dot:", q_dot)
+                print("tau:", tau)
+                raise ValueError("NaN in joint state or torque!")
+
+            if np.any(np.isinf(q)) or np.any(np.isinf(q_dot)) or np.any(np.isinf(tau)):
+                print(f"\n[ERROR] Step {step}: Inf detected")
+                print("q:", q)
+                print("q_dot:", q_dot)
+                print("tau:", tau)
+                raise ValueError("Inf in joint state or torque!")
+
+            # 可选：查看 applyExternalForce 的 pos 是否正常
+            if np.any(np.isnan(pos)) or np.any(np.isinf(pos)):
+                print(f"\n[ERROR] Step {step}: Invalid end-effector position")
+                print("pos:", pos.flatten())
+                raise ValueError("Invalid position for external force application")
 
             if step % 50 == 0 or step == steps - 1:
                 bar_length = 30
@@ -1251,18 +1274,18 @@ class RobotController:
             cost_data_csv = 'cost_data.csv'
             with open(cost_data_csv, mode='w', newline='') as cost_file:
                 cost_writer = csv.writer(cost_file)
-                header = ["Fx", "Fy", "Fz"] + [f"iter_{i+1}" for i in range(max_iter)]
+                header = ["Fx", "Fy", "Fz"] + [f"iter_{b+1}" for b in range(max_iter)]
                 cost_writer.writerow(header)
 
-            for i, test_force in enumerate(forces):
-                print(f"\n🔧 Force Sample {i+1}/{len(forces)}: {test_force}")
+            for idx, test_force in enumerate(forces):
+                print(f"\n🔧 Force Sample {idx+1}/{len(forces)}: {test_force}")
 
                 def cost_function(q_desired):
                     print("Evaluating cost for q:", np.round(q_desired, 2))
                     # 关节最大力矩
                     tau_max = np.array([39, 39, 39, 39, 9, 9, 9])
                     # 获取最后输出力矩与关节位置
-                    tau, q, pos, quat = self.task_space_impedance_control(q_desired, desired_pose, controller_gain, max_steps=9000, force_ext=test_force.tolist())
+                    tau, q, pos, quat = self.task_space_impedance_control(q_desired, desired_pose, controller_gain, max_steps=5000, force_ext=test_force.tolist())
                     #print("tau:", tau)
                     # print("q:", q)
                     # print("End-effector pose:", pos.flatten(), quat)
@@ -1284,7 +1307,7 @@ class RobotController:
                 print("Starting PSO optimization...")
                 best_th, best_cost = pso(cost_function_return_cost_only, lb, ub, swarmsize=swarm_size, maxiter=max_iter, debug=True)
 
-                print(f"✅ Done Force {i+1}/{len(forces)}")
+                print(f"✅ Done Force {idx+1}/{len(forces)}")
 
                 print("Best th_initial found:", best_th)
                 print("Cost:", best_cost)
@@ -1292,15 +1315,18 @@ class RobotController:
                 final_cost, tau, q, pos, quat = cost_function(best_th)
 
                 # 提取每轮的 g_best
-                for i in range(max_iter):
-                    start = i * swarm_size
-                    end = (i + 1) * swarm_size
+                for a in range(max_iter):
+                    start = a * swarm_size
+                    end = (a + 1) * swarm_size
                     gbest_cost.append(min(all_costs[start:end]))
 
                 # 记录 results.csv
                 with open(result_csv_path, mode='a', newline='') as result_file:
                     writer = csv.writer(result_file)
                     writer.writerow(list(test_force) + [final_cost] + list(best_th) + list(q) + list(tau) + list(pos.flatten()) + list(p.getEulerFromQuaternion(quat)))
+                    result_file.flush()
+                    os.fsync(result_file.fileno())
+                print(f"[✓] 写入 result: {test_force} -> cost={final_cost:.2f}")
 
                 # 记录 cost_data.csv
                 with open(cost_data_csv, mode='a', newline='') as cost_file:
