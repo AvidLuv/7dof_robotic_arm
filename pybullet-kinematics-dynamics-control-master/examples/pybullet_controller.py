@@ -1142,8 +1142,8 @@ class RobotController:
 
         # 稳定性判断参数
         stable_counter = 0
-        stable_required_steps = 250
-        velocity_rms_threshold = 2e-2
+        stable_required_steps = 1500
+        velocity_rms_threshold = 5e-3
         acceleration_rms_threshold = 5e-2
         
         for step in range(steps):
@@ -1292,8 +1292,8 @@ class RobotController:
             for idx, test_force in enumerate(forces):
                 print(f"\n🔧 Force Sample {idx+1}/{len(forces)}: {test_force}")
 
-                if np.allclose(test_force, [0.0, 0.0, 0.0], atol=1e-6):
-                    print("[!] Detected zero external force — skipping PSO and writing dummy data.")
+                if idx == 0:
+                    print("[!] Detected first force sample — skipping PSO and writing dummy data.")
                     dummy_row = list(test_force) + ["SKIPPED"] + ["DUMMY"] * (31 - 4)
                     with open(result_csv_path, mode='a', newline='') as result_file:
                         writer = csv.writer(result_file)
@@ -1308,12 +1308,12 @@ class RobotController:
                     # 关节最大力矩
                     tau_max = np.array([39, 39, 39, 39, 9, 9, 9])
                     # 获取最后输出力矩与关节位置
-                    tau, q, pos, quat = self.task_space_impedance_control(q_desired, desired_pose, controller_gain, max_steps=15000, force_ext=test_force.tolist())
+                    tau, q, pos, quat = self.task_space_impedance_control(q_desired, desired_pose, controller_gain, max_steps=100, force_ext=test_force.tolist())
                     #print("tau:", tau)
                     # print("q:", q)
                     # print("End-effector pose:", pos.flatten(), quat)
                     tau = tau.flatten()
-                    cost = np.sum((tau_max - np.abs(tau)) ** 2)
+                    cost = -np.sum((tau_max - np.abs(tau)) ** 2)
                     return cost, tau, q, pos, quat
                 
                 # 记录每代迭代的 best_cost
