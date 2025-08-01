@@ -1064,15 +1064,6 @@ class RobotController:
         # ext_force_y_slider = p.addUserDebugParameter("Ext Force Y", -100, 100, 0)
         # ext_force_z_slider = p.addUserDebugParameter("Ext Force Z", -100, 100, 0)
 
-        # 可视化目标点
-        # target_visual = p.createVisualShape(
-        #     shapeType=p.GEOM_SPHERE,
-        #     radius=0.02,
-        #     rgbaColor=[1, 0, 0, 1])
-        # p.createMultiBody(
-        #     baseVisualShapeIndex=target_visual,
-        #     basePosition=desired_pose[:3])
-
         def compute_jacobian_dot_analytic(robot_id, link_index, q_list, dq_list, delta=1e-6):
             """
             通过数值微分来计算雅可比矩阵的时间导数 (J_dot)。
@@ -1148,6 +1139,12 @@ class RobotController:
             return q_list, dq_list, q, q_dot, q_ddot
         
         steps = max_steps
+
+        # 稳定性判断参数
+        stable_counter = 0
+        stable_required_steps = 250
+        velocity_rms_threshold = 2e-2
+        acceleration_rms_threshold = 5e-2
         
         for step in range(steps):
             #print(step)
@@ -1237,6 +1234,20 @@ class RobotController:
                                         forces=tau)
             p.stepSimulation()
             time.sleep(dt)
+
+            # ✅ 这里加入稳定性判断代码：
+            vel_rms = np.sqrt(np.mean(q_dot ** 2))
+            acc_rms = np.sqrt(np.mean(q_ddot ** 2))
+            print(f"Step {step}: vel_rms={vel_rms:.4e}, acc_rms={acc_rms:.4e}")
+
+            if vel_rms < velocity_rms_threshold and acc_rms < acceleration_rms_threshold:
+                stable_counter += 1
+            else:
+                stable_counter = 0
+
+            if stable_counter >= stable_required_steps:
+                print(f"\n[✓] Early stop at step {step}: Robot stabilized (vel_rms={vel_rms:.4e}, acc_rms={acc_rms:.4e})")
+                break
         #p.disconnect()
         return tau, q, pos, quat
 
@@ -1251,8 +1262,8 @@ class RobotController:
         ub = [np.pi] * 7
 
         # PSO 参数
-        swarm_size = 15
-        max_iter = 15
+        swarm_size = 2
+        max_iter = 2
 
         # 读取 forces.csv 文件中的所有外力行
         force_csv_path = 'forces.csv'
@@ -1262,6 +1273,7 @@ class RobotController:
         result_csv_path = 'results.csv'
         with open(result_csv_path, mode='w', newline='') as result_file:
             writer = csv.writer(result_file)
+ 
             writer.writerow([
                 "Fx", "Fy", "Fz", "cost",
                 "best_th1", "best_th2", "best_th3", "best_th4", "best_th5", "best_th6", "best_th7",
@@ -1280,12 +1292,23 @@ class RobotController:
             for idx, test_force in enumerate(forces):
                 print(f"\n🔧 Force Sample {idx+1}/{len(forces)}: {test_force}")
 
+                if np.allclose(test_force, [0.0, 0.0, 0.0], atol=1e-6):
+                    print("[!] Detected zero external force — skipping PSO and writing dummy data.")
+                    dummy_row = list(test_force) + ["SKIPPED"] + ["DUMMY"] * (31 - 4)
+                    with open(result_csv_path, mode='a', newline='') as result_file:
+                        writer = csv.writer(result_file)
+                        writer.writerow(dummy_row)
+                    with open(cost_data_csv, mode='a', newline='') as cost_file:
+                        cost_writer = csv.writer(cost_file)
+                        cost_writer.writerow(list(test_force) + ["SKIPPED"] * max_iter)
+                    continue
+
                 def cost_function(q_desired):
                     print("Evaluating cost for q:", np.round(q_desired, 2))
                     # 关节最大力矩
                     tau_max = np.array([39, 39, 39, 39, 9, 9, 9])
                     # 获取最后输出力矩与关节位置
-                    tau, q, pos, quat = self.task_space_impedance_control(q_desired, desired_pose, controller_gain, max_steps=5000, force_ext=test_force.tolist())
+                    tau, q, pos, quat = self.task_space_impedance_control(q_desired, desired_pose, controller_gain, max_steps=15000, force_ext=test_force.tolist())
                     #print("tau:", tau)
                     # print("q:", q)
                     # print("End-effector pose:", pos.flatten(), quat)
@@ -1324,8 +1347,6 @@ class RobotController:
                 with open(result_csv_path, mode='a', newline='') as result_file:
                     writer = csv.writer(result_file)
                     writer.writerow(list(test_force) + [final_cost] + list(best_th) + list(q) + list(tau) + list(pos.flatten()) + list(p.getEulerFromQuaternion(quat)))
-                    result_file.flush()
-                    os.fsync(result_file.fileno())
                 print(f"[✓] 写入 result: {test_force} -> cost={final_cost:.2f}")
 
                 # 记录 cost_data.csv
@@ -1333,6 +1354,7 @@ class RobotController:
                     cost_writer = csv.writer(cost_file)
                     padded_costs = gbest_cost[:max_iter] + [gbest_cost[-1]] * (max_iter - len(gbest_cost))
                     cost_writer.writerow(list(test_force) + padded_costs)
+
 
                 
 
