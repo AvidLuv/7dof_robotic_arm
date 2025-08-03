@@ -1026,7 +1026,7 @@ class RobotController:
             再计算 tau_null = -K_n*(q - q_d) - D_n*q_dot，
             最终 tau = tau + N*tau_null，其中 N = I - J^T*pinv(J^T)
         """
-        base_pose = np.array([ 2.6, -1.4, 4.0, -1.6, -1.7, -1.9, 2.6])
+        base_pose = np.array([-0.71, 0.51, -0.22, 1.61, 6.31, -2.02, 0.9])
         self.setJointPosition(base_pose)
 
         p.setRealTimeSimulation(False)
@@ -1142,7 +1142,7 @@ class RobotController:
 
         # 稳定性判断参数
         stable_counter = 0
-        stable_required_steps = 1500
+        stable_required_steps = 750
         velocity_rms_threshold = 5e-3
         acceleration_rms_threshold = 5e-2
         
@@ -1238,7 +1238,7 @@ class RobotController:
             # ✅ 这里加入稳定性判断代码：
             vel_rms = np.sqrt(np.mean(q_dot ** 2))
             acc_rms = np.sqrt(np.mean(q_ddot ** 2))
-            print(f"Step {step}: vel_rms={vel_rms:.4e}, acc_rms={acc_rms:.4e}")
+            #print(f"Step {step}: vel_rms={vel_rms:.4e}, acc_rms={acc_rms:.4e}")
 
             if vel_rms < velocity_rms_threshold and acc_rms < acceleration_rms_threshold:
                 stable_counter += 1
@@ -1262,8 +1262,8 @@ class RobotController:
         ub = [np.pi] * 7
 
         # PSO 参数
-        swarm_size = 2
-        max_iter = 2
+        swarm_size = 15
+        max_iter = 15
 
         # 读取 forces.csv 文件中的所有外力行
         force_csv_path = 'forces.csv'
@@ -1308,7 +1308,7 @@ class RobotController:
                     # 关节最大力矩
                     tau_max = np.array([39, 39, 39, 39, 9, 9, 9])
                     # 获取最后输出力矩与关节位置
-                    tau, q, pos, quat = self.task_space_impedance_control(q_desired, desired_pose, controller_gain, max_steps=100, force_ext=test_force.tolist())
+                    tau, q, pos, quat = self.task_space_impedance_control(q_desired, desired_pose, controller_gain, max_steps=15000, force_ext=test_force.tolist())
                     #print("tau:", tau)
                     # print("q:", q)
                     # print("End-effector pose:", pos.flatten(), quat)
