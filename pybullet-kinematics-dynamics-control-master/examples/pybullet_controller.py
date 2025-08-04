@@ -1309,11 +1309,14 @@ class RobotController:
                     tau_max = np.array([39, 39, 39, 39, 9, 9, 9])
                     # 获取最后输出力矩与关节位置
                     tau, q, pos, quat = self.task_space_impedance_control(q_desired, desired_pose, controller_gain, max_steps=15000, force_ext=test_force.tolist())
-                    #print("tau:", tau)
-                    # print("q:", q)
-                    # print("End-effector pose:", pos.flatten(), quat)
                     tau = tau.flatten()
+
+                    if np.any(np.abs(tau) - tau_max > 1e-6):
+                        print("⚠️  Torque overflow detected — applying heavy penalty.")
+                        return 1e20, tau, q, pos, quat  # 👈 返回非常大的正值，让PSO远离
+    
                     cost = -np.sum((tau_max - np.abs(tau)) ** 2)
+
                     return cost, tau, q, pos, quat
                 
                 # 记录每代迭代的 best_cost
