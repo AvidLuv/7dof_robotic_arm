@@ -1233,7 +1233,7 @@ class RobotController:
                                         controlMode=p.TORQUE_CONTROL,
                                         forces=tau)
             p.stepSimulation()
-            time.sleep(dt)
+            #time.sleep(dt)
 
             # ✅ 这里加入稳定性判断代码：
             vel_rms = np.sqrt(np.mean(q_dot ** 2))

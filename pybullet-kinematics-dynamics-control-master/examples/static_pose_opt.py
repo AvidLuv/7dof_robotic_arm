@@ -2,7 +2,7 @@ import numpy as np
 from pybullet_controller import RobotController
 
 robot = RobotController(robot_type='7_dof', time_step=1/1000.)
-robot.createWorld(GUI=True)
+robot.createWorld(GUI=False)
 
 # 设置初始关节角度
 th_initial= np.array([-0.71, 0.51, -0.22, 1.61, 6.31, -2.02, 0.9])
