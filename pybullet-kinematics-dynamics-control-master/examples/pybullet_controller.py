@@ -1026,7 +1026,7 @@ class RobotController:
             再计算 tau_null = -K_n*(q - q_d) - D_n*q_dot，
             最终 tau = tau + N*tau_null，其中 N = I - J^T*pinv(J^T)
         """
-        base_pose = np.array([-0.71, 0.51, -0.22, 1.61, 6.31, -2.02, 0.9])
+        base_pose = np.array([0, -1.0, 1.0, -1.57, -1.57, -1.57, 0])
         self.setJointPosition(base_pose)
 
         p.setRealTimeSimulation(False)
