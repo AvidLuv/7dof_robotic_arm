@@ -1233,7 +1233,7 @@ class RobotController:
                                         controlMode=p.TORQUE_CONTROL,
                                         forces=tau)
             p.stepSimulation()
-            time.sleep(dt)
+            #time.sleep(dt)
 
             # ✅ 这里加入稳定性判断代码：
             vel_rms = np.sqrt(np.mean(q_dot ** 2))
@@ -1316,6 +1316,123 @@ class RobotController:
                         return 1e20, tau, q, pos, quat  # 👈 返回非常大的正值，让PSO远离
     
                     cost = -np.sum((tau_max - np.abs(tau)) ** 2)
+
+                    return cost, tau, q, pos, quat
+                
+                # 记录每代迭代的 best_cost
+                all_costs = []
+                gbest_cost = []
+                g_best_so_far = float('inf')
+
+                # 包装一个带返回值的目标函数
+                def cost_function_return_cost_only(q_desired):
+                    cost, _, _, _, _ = cost_function(q_desired)
+                    all_costs.append(cost)
+                    return cost
+
+                print("Starting PSO optimization...")
+                best_th, best_cost = pso(cost_function_return_cost_only, lb, ub, swarmsize=swarm_size, maxiter=max_iter, debug=True)
+
+                print(f"✅ Done Force {idx+1}/{len(forces)}")
+
+                print("Best th_initial found:", best_th)
+                print("Cost:", best_cost)
+
+                final_cost, tau, q, pos, quat = cost_function(best_th)
+
+                # 提取每轮的 g_best
+                for a in range(max_iter):
+                    start = a * swarm_size
+                    end = (a + 1) * swarm_size
+                    gbest_cost.append(min(all_costs[start:end]))
+
+                # 记录 results.csv
+                with open(result_csv_path, mode='a', newline='') as result_file:
+                    writer = csv.writer(result_file)
+                    writer.writerow(list(test_force) + [final_cost] + list(best_th) + list(q) + list(tau) + list(pos.flatten()) + list(p.getEulerFromQuaternion(quat)))
+                print(f"[✓] 写入 result: {test_force} -> cost={final_cost:.2f}")
+
+                # 记录 cost_data.csv
+                with open(cost_data_csv, mode='a', newline='') as cost_file:
+                    cost_writer = csv.writer(cost_file)
+                    padded_costs = gbest_cost[:max_iter] + [gbest_cost[-1]] * (max_iter - len(gbest_cost))
+                    cost_writer.writerow(list(test_force) + padded_costs)
+
+    def static_pose_opt2(self, th_initial, desired_pose, controller_gain=100):
+        dt = self.time_step
+        p.setRealTimeSimulation(False)
+        
+        q_desired = th_initial
+
+        # 设置优化边界
+        lb = [-np.pi] * 7
+        ub = [np.pi] * 7
+
+        # PSO 参数
+        swarm_size = 20
+        max_iter = 20
+
+        # 读取 forces.csv 文件中的所有外力行
+        force_csv_path = 'forces.csv'
+        forces = pd.read_csv(force_csv_path).values  # Nx3 array
+
+        # 创建用于保存优化结果的 csv 文件
+        result_csv_path = 'results.csv'
+        with open(result_csv_path, mode='w', newline='') as result_file:
+            writer = csv.writer(result_file)
+ 
+            writer.writerow([
+                "Fx", "Fy", "Fz", "cost",
+                "best_th1", "best_th2", "best_th3", "best_th4", "best_th5", "best_th6", "best_th7",
+                "q1", "q2", "q3", "q4", "q5", "q6", "q7",
+                "tau1", "tau2", "tau3", "tau4", "tau5", "tau6", "tau7",
+                "x", "y", "z", "roll", "pitch", "yaw"
+            ])
+            
+            # 创建 cost_data.csv 文件，记录每组力的迭代曲线
+            cost_data_csv = 'cost_data.csv'
+            with open(cost_data_csv, mode='w', newline='') as cost_file:
+                cost_writer = csv.writer(cost_file)
+                header = ["Fx", "Fy", "Fz"] + [f"iter_{b+1}" for b in range(max_iter)]
+                cost_writer.writerow(header)
+
+            for idx, test_force in enumerate(forces):
+                print(f"\n🔧 Force Sample {idx+1}/{len(forces)}: {test_force}")
+
+                if idx == 0:
+                    print("[!] Detected first force sample — skipping PSO and writing dummy data.")
+                    dummy_row = list(test_force) + ["SKIPPED"] + ["DUMMY"] * (31 - 4)
+                    with open(result_csv_path, mode='a', newline='') as result_file:
+                        writer = csv.writer(result_file)
+                        writer.writerow(dummy_row)
+                    with open(cost_data_csv, mode='a', newline='') as cost_file:
+                        cost_writer = csv.writer(cost_file)
+                        cost_writer.writerow(list(test_force) + ["SKIPPED"] * max_iter)
+                    continue
+
+                def cost_function(q_desired):
+                    print("Evaluating cost for q:", np.round(q_desired, 2))
+
+                    # 最大允许力矩
+                    tau_max = np.array([39, 39, 39, 39, 9, 9, 9])
+
+                    # 获取当前姿态输出力矩
+                    tau, q, pos, quat = self.task_space_impedance_control(
+                        q_desired, desired_pose, controller_gain,
+                        max_steps=15000, force_ext=test_force.tolist()
+                    )
+                    tau = tau.flatten()
+
+                    # 计算归一化后的力矩利用率 u_i = |tau_i| / tau_max_i
+                    u = np.abs(tau) / tau_max
+
+                    # 若有任何关节超出最大力矩，返回惩罚值
+                    if np.any(u > 1.0 + 1e-6):
+                        print("⚠️  Torque overflow detected — applying heavy penalty.")
+                        return 1e20, tau, q, pos, quat
+
+                    # 目标 cost 是利用率的方差
+                    cost = np.var(u)
 
                     return cost, tau, q, pos, quat
                 

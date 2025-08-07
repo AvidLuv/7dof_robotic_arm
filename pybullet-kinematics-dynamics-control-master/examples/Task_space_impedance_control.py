@@ -10,7 +10,7 @@ forces = pd.read_csv(force_csv_path).values  # Nx3 array
 
 # 创建机器人控制器
 robot = RobotController(robot_type='7_dof', time_step=1/1000.)
-robot.createWorld(GUI=True)
+robot.createWorld(GUI=False)
 
 # 设置期望末端位姿
 desired_pose = np.array([0.35, 0.35, 0.65, 0, 0, 0])
@@ -42,7 +42,7 @@ with open(output_csv, mode='w', newline='') as f:
             th_initial=th_initial,
             desired_pose=desired_pose,
             controller_gain=110,
-            max_steps=15000,
+            max_steps=30000,
             force_ext=[Fx, Fy, Fz]
         )
 
