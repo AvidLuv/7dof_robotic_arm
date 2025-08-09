@@ -1280,8 +1280,8 @@ class RobotController:
         ], dtype=float)
 
         # PSO 参数
-        swarm_size = 15
-        max_iter = 15
+        swarm_size = 20
+        max_iter = 20
 
         # 读取 forces.csv 文件中的所有外力行
         force_csv_path = 'forces.csv'
