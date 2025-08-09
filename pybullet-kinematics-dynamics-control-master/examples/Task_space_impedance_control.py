@@ -13,7 +13,7 @@ robot = RobotController(robot_type='7_dof', time_step=1/1000.)
 robot.createWorld(GUI=False)
 
 # 设置期望末端位姿
-desired_pose = np.array([0.35, 0.35, 0.65, 0, 0, 0])
+desired_pose = np.array([0.35, 0.35, 0.5, 0, 0, 0])
 
 # 初始关节角度
 th_initial = np.array([0, -1.0, 1.0, -1.57, -1.57, -1.57, 0])

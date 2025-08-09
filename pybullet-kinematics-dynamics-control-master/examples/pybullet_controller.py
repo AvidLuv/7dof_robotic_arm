@@ -1258,8 +1258,26 @@ class RobotController:
         q_desired = th_initial
 
         # 设置优化边界
-        lb = [-np.pi] * 7
-        ub = [np.pi] * 7
+        deg = np.deg2rad
+        lb = np.array([
+            -np.pi,        # J1: 实用范围
+            -deg(126),     # J2: 物理/软件限制
+            -np.pi,        # J3: 实用范围
+            -deg(147),     # J4
+            -np.pi,        # J5: 实用范围
+            -deg(117),     # J6
+            -np.pi         # J7: 实用范围
+        ], dtype=float)
+
+        ub = np.array([
+            np.pi,        # J1
+            deg(126),     # J2
+            np.pi,        # J3
+            deg(147),     # J4
+            np.pi,        # J5
+            deg(117),     # J6
+            np.pi         # J7
+        ], dtype=float)
 
         # PSO 参数
         swarm_size = 15
