@@ -1408,11 +1408,11 @@ class RobotController:
         # ===== “远离边界”代价所需的常量（中点、半幅、边缘带宽） =====
         c = (lb + ub) / 2.0
         h = (ub - lb) / 2.0 + 1e-9   # 防止除0
-        m = 0.30                     # 边缘带宽比例（最后 20% 作为边缘区）
+        
 
         # ---- 下面保持你的原逻辑（PSO 参数/读取文件等） ----
-        swarm_size = 2
-        max_iter = 3
+        swarm_size = 20
+        max_iter = 20
 
         force_csv_path = 'forces.csv'
         forces = pd.read_csv(force_csv_path).values  # Nx3 array
@@ -1456,11 +1456,25 @@ class RobotController:
                     q_desired, desired_pose, controller_gain,
                     max_steps=25000, force_ext=test_force.tolist()
                 )
-                
-                tau_max = np.array([39, 39, 39, 39, 9, 9, 9])
-                if np.any(np.abs(tau) - tau_max > 1e-6):
-                        print("⚠️  Torque overflow detected — applying heavy penalty.")
-                        return 1e20, tau, q, pos, quat  # 👈 返回非常大的正值，让PSO远离
+
+                tau = np.asarray(tau, dtype=float).reshape(-1)  # 确保是一维
+                tau_max = np.asarray([39, 39, 39, 39, 9, 9, 9], dtype=float)
+
+                # 合理容差：绝对 + 相对
+                atol = 0.05                     # 0.05 Nm 绝对容差
+                rtol = 0.005                    # 0.5% 相对容差
+                tol  = atol + rtol * tau_max    # 每个关节的容差
+
+                over = np.abs(tau) - tau_max
+                mask_over = over > tol
+
+                if np.any(mask_over):
+                    # 调试输出：看清楚到底超了多少
+                    print("⚠️ Torque overflow detected — details:")
+                    for i, (t, m, o, tl) in enumerate(zip(np.abs(tau), tau_max, over, tol), start=1):
+                        flag = "OVER" if (o > tl) else "OK"
+                        print(f"  J{i}: |tau|={t:.6f}, max={m:.2f}, diff={o:.6f}, tol={tl:.6f} -> {flag}")
+                    return 1e20, tau, q, pos, quat
                 
                 q = np.asarray(q, dtype=float)
 
@@ -1468,7 +1482,9 @@ class RobotController:
                 d = np.abs(q - c) / h
                 d = np.clip(d, 0.0, 1.0)
 
-                # 中点惩罚 + 边缘惩罚（无权重、无超参）
+                m = 0.30 # 边缘带宽比例（最后 20% 作为边缘区）
+
+                # 中点惩罚 + 边缘惩罚
                 mid_penalty  = np.sum(d**2)
                 over = np.clip(d - (1.0 - m), 0.0, None)
                 edge_penalty = np.sum(over**2)
