@@ -1456,6 +1456,12 @@ class RobotController:
                     q_desired, desired_pose, controller_gain,
                     max_steps=25000, force_ext=test_force.tolist()
                 )
+                
+                tau_max = np.array([39, 39, 39, 39, 9, 9, 9])
+                if np.any(np.abs(tau) - tau_max > 1e-6):
+                        print("⚠️  Torque overflow detected — applying heavy penalty.")
+                        return 1e20, tau, q, pos, quat  # 👈 返回非常大的正值，让PSO远离
+                
                 q = np.asarray(q, dtype=float)
 
                 # 归一化离中点距离 d ∈ [0,1]
