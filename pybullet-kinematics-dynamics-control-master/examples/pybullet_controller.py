@@ -1385,25 +1385,35 @@ class RobotController:
         # ===== Kinova Gen3 关节上下限（弧度） =====
         import numpy as np
         deg = np.deg2rad
-        lb = np.array([
-            -np.pi,        # J1
-            -deg(126),     # J2
-            -np.pi,        # J3
-            -deg(147),     # J4
-            -np.pi,        # J5
-            -deg(117),     # J6
-            -np.pi         # J7
+        # 1) 先定义 Gen3 的物理/软件上下限（弧度）
+        kinova_lb = np.array([
+            -np.pi,      # J1
+            -deg(126),   # J2
+            -np.pi,      # J3
+            -deg(147),   # J4
+            -np.pi,      # J5
+            -deg(117),   # J6
+            -np.pi       # J7
         ], dtype=float)
 
-        ub = np.array([
-            np.pi,        # J1
-            deg(126),     # J2
-            np.pi,        # J3
-            deg(147),     # J4
-            np.pi,        # J5
-            deg(117),     # J6
-            np.pi         # J7
+        kinova_ub = np.array([
+            np.pi,      # J1
+            deg(126),   # J2
+            np.pi,      # J3
+            deg(147),   # J4
+            np.pi,      # J5
+            deg(117),   # J6
+            np.pi       # J7
         ], dtype=float)
+
+        # 2) 以 th_initial 为中心
+        delta_local_deg = 15.0
+        delta = deg(delta_local_deg)
+
+        th_initial = np.array([0, -1.0, 1.0, -1.57, -1.57, -1.57, 0], dtype=float)
+
+        lb = np.maximum(kinova_lb, th_initial - delta)
+        ub = np.minimum(kinova_ub, th_initial + delta)
 
         # ===== “远离边界”代价所需的常量（中点、半幅、边缘带宽） =====
         c = (lb + ub) / 2.0
@@ -1412,7 +1422,7 @@ class RobotController:
 
         # ---- 下面保持你的原逻辑（PSO 参数/读取文件等） ----
         swarm_size = 20
-        max_iter = 20
+        max_iter = 15
 
         force_csv_path = 'forces.csv'
         forces = pd.read_csv(force_csv_path).values  # Nx3 array
